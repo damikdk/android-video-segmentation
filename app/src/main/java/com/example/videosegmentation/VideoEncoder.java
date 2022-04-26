@@ -15,9 +15,9 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 
-public class BitmapToVideoEncoder {
+public class VideoEncoder {
 
-    private static final String TAG = BitmapToVideoEncoder.class.getSimpleName();
+    private static final String TAG = VideoEncoder.class.getSimpleName();
 
     private final IBitmapToVideoEncoderCallback mCallback;
     private File mOutputFile;
@@ -43,7 +43,7 @@ public class BitmapToVideoEncoder {
         void onEncodingComplete(File outputFile);
     }
 
-    public BitmapToVideoEncoder(IBitmapToVideoEncoderCallback callback) {
+    public VideoEncoder(IBitmapToVideoEncoderCallback callback) {
         mCallback = callback;
     }
 
@@ -59,6 +59,7 @@ public class BitmapToVideoEncoder {
         mOutputFile = outputFile;
 
         String outputFileString;
+
         try {
             outputFileString = outputFile.getCanonicalPath();
         } catch (IOException e) {
@@ -71,8 +72,10 @@ public class BitmapToVideoEncoder {
             Log.e(TAG, "Unable to find an appropriate codec for " + MIME_TYPE);
             return;
         }
+
         Log.d(TAG, "found codec: " + codecInfo.getName());
         int colorFormat;
+
         try {
             colorFormat = selectColorFormat(codecInfo, MIME_TYPE);
         } catch (Exception e) {
@@ -93,6 +96,7 @@ public class BitmapToVideoEncoder {
         mediaFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL);
         mediaCodec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
         mediaCodec.start();
+
         try {
             mediaMuxer = new MediaMuxer(outputFileString, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
         } catch (IOException e) {
@@ -195,8 +199,10 @@ public class BitmapToVideoEncoder {
                 mediaCodec.queueInputBuffer(inputBufIndex, 0, byteConvertFrame.length, ptsUsec, 0);
                 mGenerateIndex++;
             }
+
             MediaCodec.BufferInfo mBufferInfo = new MediaCodec.BufferInfo();
             int encoderStatus = mediaCodec.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
+
             if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
                 // no output available yet
                 Log.e(TAG, "No output from encoder available");
@@ -236,6 +242,7 @@ public class BitmapToVideoEncoder {
             mediaCodec = null;
             Log.d(TAG,"RELEASE CODEC");
         }
+
         if (mediaMuxer != null) {
             mediaMuxer.stop();
             mediaMuxer.release();
@@ -252,8 +259,8 @@ public class BitmapToVideoEncoder {
                 continue;
             }
             String[] types = codecInfo.getSupportedTypes();
-            for (int j = 0; j < types.length; j++) {
-                if (types[j].equalsIgnoreCase(mimeType)) {
+            for (String type : types) {
+                if (type.equalsIgnoreCase(mimeType)) {
                     return codecInfo;
                 }
             }
@@ -284,7 +291,7 @@ public class BitmapToVideoEncoder {
             case MediaCodecInfo.CodecCapabilities.COLOR_TI_FormatYUV420PackedSemiPlanar:
                 return true;
             default:
-                Log.d("BitmapToVideoEncoder", String.format("isRecognizedFormat false"));
+                Log.d("VideoEncoder", String.format("isRecognizedFormat false"));
                 return false;
         }
     }

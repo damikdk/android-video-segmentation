@@ -1,10 +1,13 @@
 package com.example.videosegmentation
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
+import android.os.AsyncTask
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import androidx.appcompat.app.AppCompatActivity
@@ -36,7 +39,7 @@ class MainActivity : AppCompatActivity() {
         }, 100)
     }
 
-    fun share(url: String?) {
+    fun share(url: String) {
         // It's kind of broken
         val intent = Intent(Intent.ACTION_SEND)
         intent.type = "video/mp4"
@@ -48,7 +51,7 @@ class MainActivity : AppCompatActivity() {
         startActivity(chooserIntent)
     }
 
-    fun play(url: String?) {
+    fun playAlphaAbove(url: String) {
         // Produces DataSource instances through which media data is loaded.
         val dataSourceFactory: DataSource.Factory = DefaultDataSourceFactory(
             this,
@@ -74,10 +77,39 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT
         )
 
-        // add ePlayerView to WrapperView
-        setContentView(ePlayerView)
+        addContentView(ePlayerView, ePlayerView.layoutParams)
         ePlayerView.onResume()
 
         ePlayerView.setGlFilter(AlphaFrameFilter())
+    }
+
+    fun playOrigin(url: String) {
+        // Produces DataSource instances through which media data is loaded.
+        val dataSourceFactory: DataSource.Factory = DefaultDataSourceFactory(
+            this,
+            Util.getUserAgent(this, java.lang.String.valueOf(R.string.app_name))
+        )
+
+        // This is the MediaSource representing the media to be played.
+        val videoSource: MediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+            .createMediaSource(Uri.fromFile(File(url)))
+
+        // SimpleExoPlayer
+        val player2 = ExoPlayerFactory.newSimpleInstance(this)
+        player2.prepare(videoSource)
+        player2.playWhenReady = true
+        player2.repeatMode = Player.REPEAT_MODE_ALL
+
+        val ePlayerView2 = EPlayerView(this)
+
+        // set SimpleExoPlayer
+        ePlayerView2.setSimpleExoPlayer(player2);
+        ePlayerView2.layoutParams = RelativeLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+
+        addContentView(ePlayerView2, ePlayerView2.layoutParams)
+        ePlayerView2.onResume()
     }
 }

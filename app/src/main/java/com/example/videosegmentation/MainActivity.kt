@@ -29,14 +29,22 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         Handler(Looper.getMainLooper()).postDelayed({
-            MobileUnetSegmentation(this).processURL("")
+//            MobileUnetSegmentation(this).processURL("")
 
             // Uncomment if you already have temp file and you don't need Segmentation
-//            val folderPath: String = filesDir.absolutePath
-//            val videoURL = String.format("%s/temp.mp4", folderPath)
-//            play(videoURL)
+            val videoURL = String.format("%s/temp.mp4", filesDir.absolutePath)
+//            playOrigin(videoURL)
+//            playAlphaAbove(videoURL)
 
-        }, 100)
+            val bitmapDecoder = VideoDecoder { bitmap: Bitmap ->
+                Log.d("Decoder callback", "Got next frame")
+            }
+
+            AsyncTask.execute {
+                bitmapDecoder.startDecoding(File(videoURL))
+            }
+
+        }, 200)
     }
 
     fun share(url: String) {

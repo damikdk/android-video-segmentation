@@ -16,10 +16,7 @@ import android.opengl.Matrix;
 import android.util.Log;
 import android.view.Surface;
 
-import java.io.BufferedOutputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -31,10 +28,30 @@ public class VideoDecoder {
     private static final boolean VERBOSE = true;
     private static final int MAX_FRAMES = 180;       // stop extracting after this many
 
-    private final IVideoDecoderCallback mCallback;
+    private IVideoDecoderCallback mCallback = null;
+    MediaCodec decoder = null;
+    CodecOutputSurface outputSurface = null;
+    MediaExtractor extractor = null;
+    int trackIndex = -1;
+    int saveWidth = 1024;
+    int saveHeight = 1024;
+
+    final int TIMEOUT_USEC = 10000;
+    ByteBuffer[] decoderInputBuffers = null;
+    MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+    int inputChunk = 0;
+    int decodeCount = 0;
+    long frameSaveTime = 0;
+
+    boolean outputDone = false;
+    boolean inputDone = false;
+
 
     public interface IVideoDecoderCallback {
         void onFrameCaptured(Bitmap bitmap);
+    }
+
+    public VideoDecoder() {
     }
 
     public VideoDecoder(IVideoDecoderCallback callback) {
@@ -42,189 +59,211 @@ public class VideoDecoder {
     }
 
     public void prepareDecoder(File file) {
+        // Safety first
+        release();
 
+        if (!file.canRead()) {
+            Log.d(TAG, "Can't read file " + file);
+        }
+
+        extractor = new MediaExtractor();
+
+        try {
+            extractor.setDataSource(file.toString());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        trackIndex = selectTrack(extractor);
+        if (trackIndex < 0) {
+            throw new RuntimeException("No video track found in " + file);
+        }
+
+        extractor.selectTrack(trackIndex);
+
+        MediaFormat format = extractor.getTrackFormat(trackIndex);
+        if (VERBOSE) {
+            Log.d(TAG, "Video size is " + format.getInteger(MediaFormat.KEY_WIDTH) + "x" +
+                    format.getInteger(MediaFormat.KEY_HEIGHT));
+        }
+
+        // Could use width/height from the MediaFormat to get full-size frames.
+        outputSurface = new VideoDecoder.CodecOutputSurface(saveWidth, saveHeight);
+
+        // Create a MediaCodec decoder, and configure it with the MediaFormat from the
+        // extractor. It's very important to use the format from the extractor because
+        // it contains a copy of the CSD-0/CSD-1 codec-specific data chunks.
+        String mime = format.getString(MediaFormat.KEY_MIME);
+
+        try {
+            decoder = MediaCodec.createDecoderByType(mime);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        decoder.configure(format, outputSurface.getSurface(), null, 0);
+        decoder.start();
+    }
+
+    public void startDecoding() {
+        info = new MediaCodec.BufferInfo();
+        decoderInputBuffers = decoder.getInputBuffers();
+        inputChunk = 0;
+        decodeCount = 0;
+        frameSaveTime = 0;
+
+        outputDone = false;
+        inputDone = false;
+    }
+
+    public Bitmap getFrame(long time) {
+        long currentBufferTime = getNextInputBuffer();
+
+        if (time < currentBufferTime) {
+            Log.e(TAG, "Bad situation. Decoder already ahead of needed frame");
+
+            return null;
+        }
+
+        decodeInputBuffer();
+        Bitmap resultBitmap = getBitmapFromSurface();
+
+        return resultBitmap;
     }
 
     public Bitmap getNextFrame() {
+        if (outputDone) {
+            Log.e(TAG, "Bad situation. Decoder is already finished");
 
-        return null;
+            return null;
+        }
+
+        getNextInputBuffer();
+        decodeInputBuffer();
+        Bitmap resultBitmap = getBitmapFromSurface();
+
+        return resultBitmap;
     }
 
-    public Bitmap getFrame(int time) {
-
-        return null;
+    public void endDecoding() {
+        release();
     }
 
-    private Bitmap getNextBuffer(int time) {
+    private long getNextInputBuffer() {
 
-        return null;
-    }
+        long presentationTimeMicroSeconds = 0;
 
+        // Feed more data to the decoder.
+        if (!inputDone) {
+            int inputBufIndex = decoder.dequeueInputBuffer(TIMEOUT_USEC);
+            if (inputBufIndex >= 0) {
+                ByteBuffer inputBuf = decoderInputBuffers[inputBufIndex];
+                // Read the sample data into the ByteBuffer.  This neither respects nor
+                // updates inputBuf's position, limit, etc.
+                int chunkSize = extractor.readSampleData(inputBuf, 0);
 
-    public void startDecoding(File file) {
-        MediaCodec decoder = null;
-        VideoDecoder.CodecOutputSurface outputSurface = null;
-        MediaExtractor extractor = null;
-        int saveWidth = 1024;
-        int saveHeight = 1024;
+                if (chunkSize < 0) {
+                    // End of stream -- send empty frame with EOS flag set.
+                    decoder.queueInputBuffer(inputBufIndex, 0, 0, 0L,
+                            MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                    inputDone = true;
 
-        try {
-            File inputFile = file;   // must be an absolute path
-            // The MediaExtractor error messages aren't very useful.  Check to see if the input
-            // file exists so we can throw a better one if it's not there.
-            if (!inputFile.canRead()) {
-//                throw new FileNotFoundException("Unable to read " + inputFile);
-            }
+                    if (VERBOSE) Log.d(TAG, "sent input EOS");
 
-            extractor = new MediaExtractor();
-            extractor.setDataSource(inputFile.toString());
+                } else {
+                    if (extractor.getSampleTrackIndex() != trackIndex) {
+                        Log.e(TAG, "WEIRD ERROR: got sample from track " +
+                                extractor.getSampleTrackIndex() + ", expected " + trackIndex);
+                    }
+                    presentationTimeMicroSeconds = extractor.getSampleTime();
 
-            int trackIndex = selectTrack(extractor);
-            if (trackIndex < 0) {
-                throw new RuntimeException("No video track found in " + inputFile);
-            }
-            extractor.selectTrack(trackIndex);
+                    decoder.queueInputBuffer(inputBufIndex, 0, chunkSize,
+                            presentationTimeMicroSeconds, 0 /*flags*/);
 
-            MediaFormat format = extractor.getTrackFormat(trackIndex);
-            if (VERBOSE) {
-                Log.d(TAG, "Video size is " + format.getInteger(MediaFormat.KEY_WIDTH) + "x" +
-                        format.getInteger(MediaFormat.KEY_HEIGHT));
-            }
+                    if (VERBOSE) {
+                        Log.d(TAG, "submitted frame " + inputChunk + " to dec, size=" +
+                                chunkSize);
+                    }
 
-            // Could use width/height from the MediaFormat to get full-size frames.
-            outputSurface = new VideoDecoder.CodecOutputSurface(saveWidth, saveHeight);
-
-            // Create a MediaCodec decoder, and configure it with the MediaFormat from the
-            // extractor.  It's very important to use the format from the extractor because
-            // it contains a copy of the CSD-0/CSD-1 codec-specific data chunks.
-            String mime = format.getString(MediaFormat.KEY_MIME);
-            decoder = MediaCodec.createDecoderByType(mime);
-            decoder.configure(format, outputSurface.getSurface(), null, 0);
-            decoder.start();
-
-            doExtract(extractor, trackIndex, decoder, outputSurface);
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            // release everything we grabbed
-            if (outputSurface != null) {
-                outputSurface.release();
-                outputSurface = null;
-            }
-            if (decoder != null) {
-                decoder.stop();
-                decoder.release();
-                decoder = null;
-            }
-            if (extractor != null) {
-                extractor.release();
-                extractor = null;
+                    inputChunk++;
+                    extractor.advance();
+                }
+            } else {
+                if (VERBOSE) Log.d(TAG, "input buffer not available");
             }
         }
 
+        return presentationTimeMicroSeconds;
     }
 
-    static void doExtract(MediaExtractor extractor, int trackIndex, MediaCodec decoder,
-                          VideoDecoder.CodecOutputSurface outputSurface) throws IOException {
-        final int TIMEOUT_USEC = 10000;
-        ByteBuffer[] decoderInputBuffers = decoder.getInputBuffers();
-        MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-        int inputChunk = 0;
-        int decodeCount = 0;
-        long frameSaveTime = 0;
+    private void decodeInputBuffer() {
+        int decoderStatus = decoder.dequeueOutputBuffer(info, TIMEOUT_USEC);
 
-        boolean outputDone = false;
-        boolean inputDone = false;
+        if (decoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
+            // no output available yet
+            if (VERBOSE) Log.d(TAG, "no output from decoder available");
+        } else if (decoderStatus == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+            // not important for us, since we're using Surface
+            if (VERBOSE) Log.d(TAG, "decoder output buffers changed");
+        } else if (decoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+            MediaFormat newFormat = decoder.getOutputFormat();
+            if (VERBOSE) Log.d(TAG, "decoder output format changed: " + newFormat);
+        } else if (decoderStatus < 0) {
+            Log.e(TAG, "unexpected result from decoder.dequeueOutputBuffer: " + decoderStatus);
+        } else {
+            // decoderStatus >= 0
+            if (VERBOSE) Log.d(TAG, "surface decoder given buffer " + decoderStatus +
+                    " (size=" + info.size + ")");
+            if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                if (VERBOSE) Log.d(TAG, "output EOS");
+                outputDone = true;
+            }
+
+            boolean doRender = (info.size != 0);
+
+            // As soon as we call releaseOutputBuffer, the buffer will be forwarded
+            // to SurfaceTexture to convert to a texture.  The API doesn't guarantee
+            // that the texture will be available before the call returns, so we
+            // need to wait for the onFrameAvailable callback to fire.
+            decoder.releaseOutputBuffer(decoderStatus, doRender);
+
+            if (doRender) {
+                if (VERBOSE) Log.d(TAG, "awaiting decode of frame " + decodeCount);
+                outputSurface.awaitNewImage();
+                outputSurface.drawImage(true);
+
+                decodeCount++;
+            }
+        }
+    }
+
+    private Bitmap getBitmapFromSurface() {
+        return outputSurface.getBitmap();
+    }
+
+    private void release() {
+        if (outputSurface != null) {
+            outputSurface.release();
+            outputSurface = null;
+        }
+        if (decoder != null) {
+            decoder.stop();
+            decoder.release();
+            decoder = null;
+        }
+        if (extractor != null) {
+            extractor.release();
+            extractor = null;
+        }
+    }
+
+    private void doExtract() {
 
         while (!outputDone) {
             if (VERBOSE) Log.d(TAG, "loop");
 
-            // Feed more data to the decoder.
-            if (!inputDone) {
-                int inputBufIndex = decoder.dequeueInputBuffer(TIMEOUT_USEC);
-                if (inputBufIndex >= 0) {
-                    ByteBuffer inputBuf = decoderInputBuffers[inputBufIndex];
-                    // Read the sample data into the ByteBuffer.  This neither respects nor
-                    // updates inputBuf's position, limit, etc.
-                    int chunkSize = extractor.readSampleData(inputBuf, 0);
-
-                    if (chunkSize < 0) {
-                        // End of stream -- send empty frame with EOS flag set.
-                        decoder.queueInputBuffer(inputBufIndex, 0, 0, 0L,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM);
-                        inputDone = true;
-
-                        if (VERBOSE) Log.d(TAG, "sent input EOS");
-
-                    } else {
-                        if (extractor.getSampleTrackIndex() != trackIndex) {
-                            Log.w(TAG, "WEIRD: got sample from track " +
-                                    extractor.getSampleTrackIndex() + ", expected " + trackIndex);
-                        }
-                        long presentationTimeUs = extractor.getSampleTime();
-
-                        decoder.queueInputBuffer(inputBufIndex, 0, chunkSize,
-                                presentationTimeUs, 0 /*flags*/);
-
-                        if (VERBOSE) {
-                            Log.d(TAG, "submitted frame " + inputChunk + " to dec, size=" +
-                                    chunkSize);
-                        }
-
-                        inputChunk++;
-                        extractor.advance();
-                    }
-                } else {
-                    if (VERBOSE) Log.d(TAG, "input buffer not available");
-                }
-            }
 
             if (!outputDone) {
-                int decoderStatus = decoder.dequeueOutputBuffer(info, TIMEOUT_USEC);
-                if (decoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
-                    // no output available yet
-                    if (VERBOSE) Log.d(TAG, "no output from decoder available");
-                } else if (decoderStatus == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
-                    // not important for us, since we're using Surface
-                    if (VERBOSE) Log.d(TAG, "decoder output buffers changed");
-                } else if (decoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    MediaFormat newFormat = decoder.getOutputFormat();
-                    if (VERBOSE) Log.d(TAG, "decoder output format changed: " + newFormat);
-                } else if (decoderStatus < 0) {
-                    Log.e(TAG, "unexpected result from decoder.dequeueOutputBuffer: " + decoderStatus);
-                } else {
-                    // decoderStatus >= 0
-                    if (VERBOSE) Log.d(TAG, "surface decoder given buffer " + decoderStatus +
-                            " (size=" + info.size + ")");
-                    if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                        if (VERBOSE) Log.d(TAG, "output EOS");
-                        outputDone = true;
-                    }
-
-                    boolean doRender = (info.size != 0);
-
-                    // As soon as we call releaseOutputBuffer, the buffer will be forwarded
-                    // to SurfaceTexture to convert to a texture.  The API doesn't guarantee
-                    // that the texture will be available before the call returns, so we
-                    // need to wait for the onFrameAvailable callback to fire.
-                    decoder.releaseOutputBuffer(decoderStatus, doRender);
-
-                    if (doRender) {
-                        if (VERBOSE) Log.d(TAG, "awaiting decode of frame " + decodeCount);
-                        outputSurface.awaitNewImage();
-                        outputSurface.drawImage(true);
-
-                        if (decodeCount < MAX_FRAMES) {
-                            long startWhen = System.nanoTime();
-
-                            outputSurface.saveFrame(null);
-
-                            frameSaveTime += System.nanoTime() - startWhen;
-                        }
-
-                        decodeCount++;
-                    }
-                }
             }
         }
 
@@ -459,7 +498,7 @@ public class VideoDecoder {
         /**
          * Saves the current frame to disk as a PNG image.
          */
-        public Bitmap saveFrame(String filename) throws IOException {
+        public Bitmap getBitmap() {
             // glReadPixels gives us a ByteBuffer filled with what is essentially big-endian RGBA
             // data (i.e. a byte of red, followed by a byte of green...).  To use the Bitmap
             // constructor that takes an int[] array with pixel data, we need an int[] filled
@@ -496,23 +535,12 @@ public class VideoDecoder {
             GLES20.glReadPixels(0, 0, mWidth, mHeight, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE,
                     mPixelBuf);
 
-            BufferedOutputStream bos = null;
-            try {
-//                bos = new BufferedOutputStream(new FileOutputStream(filename));
-                Bitmap bmp = Bitmap.createBitmap(mWidth, mHeight, Bitmap.Config.ARGB_8888);
-                mPixelBuf.rewind();
-                bmp.copyPixelsFromBuffer(mPixelBuf);
+            Bitmap bmp = Bitmap.createBitmap(mWidth, mHeight, Bitmap.Config.ARGB_8888);
+            mPixelBuf.rewind();
+            bmp.copyPixelsFromBuffer(mPixelBuf);
 
-                return bmp;
-
-//                bmp.compress(Bitmap.CompressFormat.PNG, 90, bos);
+            return bmp;
 //                bmp.recycle();
-            } finally {
-                if (bos != null) bos.close();
-            }
-//            if (VERBOSE) {
-//                Log.d(TAG, "Saved " + mWidth + "x" + mHeight + " frame as '" + filename + "'");
-//            }
         }
 
         /**
@@ -537,6 +565,7 @@ public class VideoDecoder {
         for (int i = 0; i < numTracks; i++) {
             MediaFormat format = extractor.getTrackFormat(i);
             String mime = format.getString(MediaFormat.KEY_MIME);
+
             if (mime.startsWith("video/")) {
                 if (VERBOSE) {
                     Log.d(TAG, "Extractor selected track " + i + " (" + mime + "): " + format);
@@ -560,8 +589,8 @@ public class VideoDecoder {
                 // X, Y, Z, U, V
                 -1.0f, -1.0f, 0, 0.f, 0.f,
                 1.0f, -1.0f, 0, 1.f, 0.f,
-                -1.0f,  1.0f, 0, 0.f, 1.f,
-                1.0f,  1.0f, 0, 1.f, 1.f,
+                -1.0f, 1.0f, 0, 0.f, 1.f,
+                1.0f, 1.0f, 0, 1.f, 1.f,
         };
 
         private FloatBuffer mTriangleVertices;

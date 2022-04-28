@@ -36,12 +36,25 @@ class MainActivity : AppCompatActivity() {
 //            playOrigin(videoURL)
 //            playAlphaAbove(videoURL)
 
-            val bitmapDecoder = VideoDecoder { bitmap: Bitmap ->
-                Log.d("Decoder callback", "Got next frame")
-            }
 
             AsyncTask.execute {
-                bitmapDecoder.startDecoding(File(videoURL))
+                val bitmapDecoder = VideoDecoder()
+                bitmapDecoder.prepareDecoder(File(videoURL));
+                bitmapDecoder.startDecoding()
+
+                var i = 0
+
+                while (i < 100) {
+                    val frame = bitmapDecoder.nextFrame
+
+                    if (frame == null) {
+                        Log.e("Main", "Suka")
+                    }
+
+                    i++
+                }
+
+                bitmapDecoder.endDecoding()
             }
 
         }, 200)

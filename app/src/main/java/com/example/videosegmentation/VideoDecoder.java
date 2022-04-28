@@ -132,6 +132,14 @@ public class VideoDecoder {
     }
 
     public Bitmap getNextFrame() {
+        if (decoder == null) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
         if (outputDone) {
             Log.e(TAG, "Bad situation. Decoder is already finished");
 
@@ -495,9 +503,6 @@ public class VideoDecoder {
             }
         }
 
-        /**
-         * Saves the current frame to disk as a PNG image.
-         */
         public Bitmap getBitmap() {
             // glReadPixels gives us a ByteBuffer filled with what is essentially big-endian RGBA
             // data (i.e. a byte of red, followed by a byte of green...).  To use the Bitmap

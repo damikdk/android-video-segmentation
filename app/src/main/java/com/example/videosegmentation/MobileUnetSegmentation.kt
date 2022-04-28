@@ -14,6 +14,7 @@ import java.io.IOException
 import java.util.*
 
 class MobileUnetSegmentation(private val context: MainActivity) {
+    private val durationLimit: Long = 1
 
     fun processURL(url: String?) {
         Log.d(LOGTAG, String.format("Start native segmentation of %s", url))
@@ -87,10 +88,13 @@ class MobileUnetSegmentation(private val context: MainActivity) {
         val outputFPS = 30
 
         // We need max 6 seconds
-        val durationLimit: Long = 1
         val secondsNeeded = Math.min(durationSeconds, durationLimit)
         val framesNeeded = Math.toIntExact(secondsNeeded) * outputFPS
         val frameTimeDelta = 1.0.toFloat() / outputFPS.toFloat() * 1000000
+
+
+        val bitmapDecoder = VideoDecoder()
+
         val segmentationHelper = SegmentationHelper(context)
         val bitmapToVideoEncoder =
             VideoEncoder { outputFile: File? ->
@@ -99,12 +103,18 @@ class MobileUnetSegmentation(private val context: MainActivity) {
                     String.format("Encoding complete!")
                 )
             }
+
         val folderPath = context.filesDir.absolutePath
         val videoURL = String.format("%s/temp.mp4", folderPath)
         val wantedResultRect = Rect(0, 0, 1024, 1024)
 
+
+
         // Run encoder in background thread
         AsyncTask.execute {
+            bitmapDecoder.prepareDecoder(File(videoURL));
+            bitmapDecoder.startDecoding()
+
             bitmapToVideoEncoder.startEncoding(
                 wantedResultRect.width(),
                 wantedResultRect.height() * 2,
@@ -122,14 +132,7 @@ class MobileUnetSegmentation(private val context: MainActivity) {
             val getFrameStartTime = System.currentTimeMillis()
             var extractedImage: Bitmap? = null
 
-            extractedImage = if (isFirst) {
-                metaRetriever.getFrameAtIndex(3)
-            } else {
-                metaRetriever.getFrameAtTime(
-                    currentTimeNeeded,
-                    MediaMetadataRetriever.OPTION_CLOSEST
-                )
-            }
+            extractedImage = bitmapDecoder.nextFrame
 
             val getFrameTime = System.currentTimeMillis() - getFrameStartTime
             Log.d(LOGTAG, String.format("Get frame in %f", getFrameTime.toDouble() / 1000.0))

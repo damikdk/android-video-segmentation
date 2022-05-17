@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.media.MediaMetadataRetriever
-import android.os.AsyncTask
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -12,9 +11,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.*
+import kotlin.concurrent.thread
 
 class MobileUnetSegmentation(private val context: MainActivity) {
-    private val durationLimit: Long = 1
+    private val durationLimit: Long = 6
 
     fun processURL(url: String?) {
         Log.d(LOGTAG, String.format("Start native segmentation of %s", url))
@@ -92,10 +92,8 @@ class MobileUnetSegmentation(private val context: MainActivity) {
         val framesNeeded = Math.toIntExact(secondsNeeded) * outputFPS
         val frameTimeDelta = 1.0.toFloat() / outputFPS.toFloat() * 1000000
 
-
-        val bitmapDecoder = VideoDecoder()
-
         val segmentationHelper = SegmentationHelper(context)
+
         val bitmapToVideoEncoder =
             VideoEncoder { outputFile: File? ->
                 Log.d(
@@ -105,20 +103,22 @@ class MobileUnetSegmentation(private val context: MainActivity) {
             }
 
         val folderPath = context.filesDir.absolutePath
-        val videoURL = String.format("%s/temp.mp4", folderPath)
+        val outputideoURL = String.format("%s/temp2.mp4", folderPath)
         val wantedResultRect = Rect(0, 0, 1024, 1024)
 
+        val bitmapDecoder = VideoDecoder()
+        val inputVideoURL = String.format("%s/girlOR.MP4", folderPath)
 
+        bitmapDecoder.prepareDecoder(File(inputVideoURL));
+        bitmapDecoder.startDecoding()
 
         // Run encoder in background thread
-        AsyncTask.execute {
-            bitmapDecoder.prepareDecoder(File(videoURL));
-            bitmapDecoder.startDecoding()
+        thread {
 
             bitmapToVideoEncoder.startEncoding(
                 wantedResultRect.width(),
                 wantedResultRect.height() * 2,
-                File(videoURL)
+                File(outputideoURL)
             )
         }
 
@@ -184,12 +184,12 @@ class MobileUnetSegmentation(private val context: MainActivity) {
 
         bitmapToVideoEncoder.stopEncoding()
 
-        val elapsedTime = (System.currentTimeMillis() - startTime) / 1000
-        Log.e(LOGTAG, String.format("Finish segmentation in %f", elapsedTime / 1000.0))
+        val elapsedTime = (System.currentTimeMillis() - startTime) / 1000.0
+        Log.e(LOGTAG, String.format("Finish segmentation in %f", elapsedTime))
 
         Handler(Looper.getMainLooper()).post {
-            context.playOrigin(videoURL)
-            context.playAlphaAbove(videoURL)
+            context.playOrigin(outputideoURL)
+            context.playAlphaAbove(outputideoURL)
             //                context.share(videoURL);
         }
     }

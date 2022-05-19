@@ -30,50 +30,15 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         Handler(Looper.getMainLooper()).postDelayed({
-                    AsyncTask.execute {
-                        MobileUnetSegmentation(this).processURL("")
+            AsyncTask.execute {
+                MobileUnetSegmentation(this).processURL("")
+            }
 
-                    }
-
-//            thread {
-//                MobileUnetSegmentation(this).processURL("")
-//            }
             // Uncomment if you already have temp file and you don't need Segmentation
 //            val videoURL = String.format("%s/temp.mp4", filesDir.absolutePath)
 //            playOrigin(videoURL)
 //            playAlphaAbove(videoURL)
-
-//            runDecoder(File(videoURL))
-
         }, 200)
-    }
-
-    private fun runDecoder(file: File) {
-//        AsyncTask.execute {
-//            val bitmapDecoder = VideoDecoder()
-//            bitmapDecoder.prepareDecoder(file);
-//            bitmapDecoder.startDecoding()
-//
-//            var i = 0
-//
-//            while (i < 1000) {
-//                val scaleStartTime = System.currentTimeMillis()
-//
-//                val frame = bitmapDecoder.nextFrame
-//
-//                val scaleTime = (System.currentTimeMillis() - scaleStartTime) / 1000.0
-//                Log.d("Main", "Get frame in $scaleTime")
-//
-//                if (frame == null) {
-//                    Log.e("Main", "Suka")
-//                    break
-//                }
-//
-//                i++
-//            }
-//
-//            bitmapDecoder.endDecoding()
-//        }
     }
 
     fun share(url: String) {

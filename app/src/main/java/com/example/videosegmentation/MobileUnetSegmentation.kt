@@ -34,9 +34,7 @@ class MobileUnetSegmentation(private val context: MainActivity) {
         val segmentationHelper = SegmentationHelper(context)
 
         // body is Just body cropped by alpha
-
         // fullsizeBody is body on transparent background size of origin
-
         // cropRect is rectangle coordinates which contains all visible pixels only
 
         val (body, fullsizeBody, cropRect) = segmentationHelper.segmentation(url!!)
@@ -103,12 +101,12 @@ class MobileUnetSegmentation(private val context: MainActivity) {
             }
 
         val folderPath = context.filesDir.absolutePath
-        val outputideoURL = String.format("%s/temp2.mp4", folderPath)
+        val outputideoURL = String.format("%s/temp.mp4", folderPath)
         val wantedResultRect = Rect(0, 0, 1024, 1024)
 
-        val bitmapDecoder = VideoDecoder()
         val inputVideoURL = String.format("%s/girlOR.MP4", folderPath)
 
+        val bitmapDecoder = VideoDecoder()
         bitmapDecoder.prepareDecoder(File(inputVideoURL));
         bitmapDecoder.startDecoding()
 
@@ -123,16 +121,13 @@ class MobileUnetSegmentation(private val context: MainActivity) {
         }
 
         var currentTimeNeeded: Long = 0
-        var isFirst = true
 
         while (currentTimeNeeded < framesNeeded * frameTimeDelta) {
             Log.e(LOGTAG, String.format("Get frame for time %f", currentTimeNeeded / 1000000.0))
 
             // Get frame of video
             val getFrameStartTime = System.currentTimeMillis()
-            var extractedImage: Bitmap? = null
-
-            extractedImage = bitmapDecoder.nextFrame
+            val extractedImage = bitmapDecoder.nextFrame
 
             val getFrameTime = System.currentTimeMillis() - getFrameStartTime
             Log.d(LOGTAG, String.format("Get frame in %f", getFrameTime.toDouble() / 1000.0))
@@ -179,9 +174,9 @@ class MobileUnetSegmentation(private val context: MainActivity) {
 
             Log.e(LOGTAG, "--------------")
             currentTimeNeeded += frameTimeDelta.toLong()
-            isFirst = false
         }
 
+        bitmapDecoder.endDecoding()
         bitmapToVideoEncoder.stopEncoding()
 
         val elapsedTime = (System.currentTimeMillis() - startTime) / 1000.0

@@ -26,9 +26,8 @@ public class VideoDecoder {
 
     private static final String TAG = VideoDecoder.class.getSimpleName();
     private static final boolean VERBOSE = true;
-    private static final int MAX_FRAMES = 180;       // stop extracting after this many
+    private static final int MAX_FRAMES = 180; // stop extracting after this many
 
-    private IVideoDecoderCallback mCallback = null;
     MediaCodec decoder = null;
     CodecOutputSurface outputSurface = null;
     MediaExtractor extractor = null;
@@ -45,18 +44,6 @@ public class VideoDecoder {
 
     boolean outputDone = false;
     boolean inputDone = false;
-
-
-    public interface IVideoDecoderCallback {
-        void onFrameCaptured(Bitmap bitmap);
-    }
-
-    public VideoDecoder() {
-    }
-
-    public VideoDecoder(IVideoDecoderCallback callback) {
-        mCallback = callback;
-    }
 
     public void prepareDecoder(File file) {
         // Safety first
@@ -116,23 +103,10 @@ public class VideoDecoder {
         inputDone = false;
     }
 
-    public Bitmap getFrame(long time) {
-        long currentBufferTime = getNextInputBuffer();
-
-        if (time < currentBufferTime) {
-            Log.e(TAG, "Bad situation. Decoder already ahead of needed frame");
-
-            return null;
-        }
-
-        decodeInputBuffer();
-        Bitmap resultBitmap = getBitmapFromSurface();
-
-        return resultBitmap;
-    }
-
     public Bitmap getNextFrame() {
         if (decoder == null) {
+            Log.e(TAG, "Error: there is no decoder, but getNextFrame was called");
+
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
@@ -263,21 +237,6 @@ public class VideoDecoder {
             extractor.release();
             extractor = null;
         }
-    }
-
-    private void doExtract() {
-
-        while (!outputDone) {
-            if (VERBOSE) Log.d(TAG, "loop");
-
-
-            if (!outputDone) {
-            }
-        }
-
-        int numSaved = Math.min(MAX_FRAMES, decodeCount);
-        Log.d(TAG, "Saving " + numSaved + " frames took " +
-                (frameSaveTime / numSaved / 1000) + " us per frame");
     }
 
     /**

@@ -39,7 +39,6 @@ class MobileUnetSegmentation(private val context: MainActivity) {
 
         val (body, fullsizeBody, cropRect) = segmentationHelper.segmentation(url!!)
 
-
         // Save to file
         try {
             FileOutputStream(bodyURL).use { out ->
@@ -112,7 +111,6 @@ class MobileUnetSegmentation(private val context: MainActivity) {
 
         // Run encoder in background thread
         thread {
-
             bitmapToVideoEncoder.startEncoding(
                 wantedResultRect.width(),
                 wantedResultRect.height() * 2,

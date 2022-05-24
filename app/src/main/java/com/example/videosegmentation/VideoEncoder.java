@@ -284,14 +284,11 @@ public class VideoEncoder {
     private static boolean isRecognizedFormat(int colorFormat) {
         switch (colorFormat) {
             // these are the formats we know how to handle for
-            case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar:
-            case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedPlanar:
             case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar:
-            case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedSemiPlanar:
-            case MediaCodecInfo.CodecCapabilities.COLOR_TI_FormatYUV420PackedSemiPlanar:
+                Log.d(TAG, "Chosen format for encoder: MediaCodecInfo.CodecCapabilities." + colorFormat);
+
                 return true;
             default:
-                Log.d("VideoEncoder", String.format("isRecognizedFormat false"));
                 return false;
         }
     }
